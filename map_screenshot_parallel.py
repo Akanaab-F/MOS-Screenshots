@@ -8,7 +8,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import urllib.parse
-from app import db, Job
+from models import db, Job
 
 def setup_chrome_driver(headless=True, user_data_dir="chrome_profile"):
     chrome_options = Options()
@@ -22,45 +22,78 @@ def setup_chrome_driver(headless=True, user_data_dir="chrome_profile"):
     chrome_options.add_argument(f'--user-data-dir={os.path.abspath(user_data_dir)}')
     return webdriver.Chrome(options=chrome_options)
 
-def capture_route_screenshot_linear(driver, idx, row, warehouse_coords, job_id):
-    try:
-        # SWAP: Use longitude as latitude and latitude as longitude
-        site_lat = float(row['longitude'])
-        site_lon = float(row['latitude'])
-        warehouse_lat = float(warehouse_coords[1])
-        warehouse_lon = float(warehouse_coords[0])
-        url = f"https://www.google.com/maps/dir/{site_lat},{site_lon}/{warehouse_lat},{warehouse_lon}/data=!4m2!4m1!3e0"
-        site_id = row.get('ID', f'site_{idx}')
-        filename = f"{site_id}"
-        
-        driver.get(url)
-        
-        # Wait for the page to load (shorter wait since we're reusing the same browser)
+def capture_route_screenshot_linear(driver, idx, row, warehouse_coords, job_id, max_retries=3):
+    """Capture route screenshot with retry mechanism"""
+    site_id = row.get('ID', f'site_{idx}')
+    
+    for attempt in range(max_retries):
         try:
-            wait = WebDriverWait(driver, 8)
-            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.section-directions-trip-title, div[data-section-id='0']")))
-        except Exception:
-            time.sleep(1)  # Shorter fallback wait
-        
-        # Create job-specific screenshots directory
-        job_screenshots_dir = f"screenshots/{job_id}"
-        if not os.path.exists(job_screenshots_dir):
-            os.makedirs(job_screenshots_dir)
-        
-        screenshot_path = f"{job_screenshots_dir}/{filename}.png"
-        driver.save_screenshot(screenshot_path)
-        
-        # Update job progress
-        with db.app.app_context():
-            job = Job.query.filter_by(job_id=job_id).first()
-            if job:
-                job.completed_routes += 1
-                job.progress = int((job.completed_routes / job.total_routes) * 100)
-                db.session.commit()
-        
-        return f"[OK] {filename}"
-    except Exception as e:
-        return f"[ERR] Error for {row.get('ID', idx)}: {e}"
+            # SWAP: Use longitude as latitude and latitude as longitude
+            site_lat = float(row['longitude'])
+            site_lon = float(row['latitude'])
+            warehouse_lat = float(warehouse_coords[1])
+            warehouse_lon = float(warehouse_coords[0])
+            
+            # Validate coordinates
+            if not (-90 <= site_lat <= 90) or not (-180 <= site_lon <= 180):
+                return f"[ERR] Invalid coordinates for {site_id}: lat={site_lat}, lon={site_lon}"
+            
+            if not (-90 <= warehouse_lat <= 90) or not (-180 <= warehouse_lon <= 180):
+                return f"[ERR] Invalid warehouse coordinates for {site_id}: lat={warehouse_lat}, lon={warehouse_lon}"
+            
+            url = f"https://www.google.com/maps/dir/{site_lat},{site_lon}/{warehouse_lat},{warehouse_lon}/data=!4m2!4m1!3e0"
+            filename = f"{site_id}"
+            
+            driver.get(url)
+            
+            # Wait for the page to load with better error handling
+            try:
+                wait = WebDriverWait(driver, 10)
+                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.section-directions-trip-title, div[data-section-id='0']")))
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"Attempt {attempt + 1} failed for {site_id}, retrying... Error: {e}")
+                    time.sleep(2)  # Wait before retry
+                    continue
+                else:
+                    # Final attempt failed, try with shorter wait
+                    time.sleep(3)
+            
+            # Create job-specific screenshots directory
+            job_screenshots_dir = f"screenshots/{job_id}"
+            if not os.path.exists(job_screenshots_dir):
+                os.makedirs(job_screenshots_dir)
+            
+            screenshot_path = f"{job_screenshots_dir}/{filename}.png"
+            driver.save_screenshot(screenshot_path)
+            
+            # Verify screenshot was created and has content
+            if os.path.exists(screenshot_path) and os.path.getsize(screenshot_path) > 1000:
+                # Update job progress
+                with db.app.app_context():
+                    job = Job.query.filter_by(job_id=job_id).first()
+                    if job:
+                        job.completed_routes += 1
+                        job.progress = int((job.completed_routes / job.total_routes) * 100)
+                        db.session.commit()
+                
+                return f"[OK] {filename}"
+            else:
+                if attempt < max_retries - 1:
+                    print(f"Screenshot too small for {site_id}, retrying...")
+                    continue
+                else:
+                    return f"[ERR] Failed to capture screenshot for {site_id} after {max_retries} attempts"
+                    
+        except Exception as e:
+            if attempt < max_retries - 1:
+                print(f"Attempt {attempt + 1} failed for {site_id}, retrying... Error: {e}")
+                time.sleep(2)
+                continue
+            else:
+                return f"[ERR] Error for {site_id} after {max_retries} attempts: {e}"
+    
+    return f"[ERR] Failed to capture screenshot for {site_id} after {max_retries} attempts"
 
 def process_material_excel_linear(excel_file, job_id):
     print(f"Loading Excel data for job {job_id}...")

@@ -69,8 +69,19 @@ def process_material_excel(excel_file, api_key):
 
 # Example usage
 if __name__ == "__main__":
+    import os
+    from dotenv import load_dotenv
+    
+    # Load environment variables
+    load_dotenv()
+    
     # --- USER: Set your Excel file name and Google Maps API key here ---
     excel_file = "material.xlsx"  # Make sure this matches your file name
-    google_api_key = "AIzaSyCXALU_QOORu1Lwd9YSWV_ma636xOu7yWk"  # <-- PUT YOUR API KEY HERE
+    google_api_key = os.getenv('GOOGLE_MAPS_API_KEY')  # Get from environment variable
+    
+    if not google_api_key:
+        print("Error: GOOGLE_MAPS_API_KEY environment variable not set")
+        print("Please set your Google Maps API key in a .env file or environment variable")
+        sys.exit(1)
 
     process_material_excel(excel_file, google_api_key)

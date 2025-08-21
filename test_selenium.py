@@ -2,7 +2,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 import time
 
-def test_selenium():
+def test_selenium():    
     """Test if Selenium and Chrome are working"""
     try:
         print("Setting up Chrome driver...")

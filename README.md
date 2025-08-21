@@ -22,12 +22,22 @@ A scalable web application that automatically generates Google Maps route screen
    cd route-screenshot-generator
    ```
 
-2. **Start the application**
+2. **Set up environment variables**
+   ```bash
+   # Copy the example environment file
+   cp env.example .env
+   
+   # Edit .env and set your secret key and other variables
+   # SECRET_KEY=your-super-secret-key-change-this-in-production
+   # GOOGLE_MAPS_API_KEY=your-google-maps-api-key-here (optional)
+   ```
+
+3. **Start the application**
    ```bash
    docker-compose up -d
    ```
 
-3. **Access the application**
+4. **Access the application**
    - Open your browser and go to `http://localhost:5000`
    - Register a new account
    - Upload your Excel file and start processing
@@ -43,9 +53,14 @@ A scalable web application that automatically generates Google Maps route screen
 
 3. **Set up environment variables**
    ```bash
+   # Copy the example environment file
+   cp env.example .env
+   
+   # Edit .env and set your variables, or export them:
    export SECRET_KEY="your-secret-key-here"
    export DATABASE_URL="sqlite:///routes.db"
    export REDIS_URL="redis://localhost:6379/0"
+   export GOOGLE_MAPS_API_KEY="your-google-maps-api-key-here"  # optional
    ```
 
 4. **Start Redis** (required for background processing)
@@ -118,18 +133,69 @@ For production deployment, consider the following:
 
 ### Scaling
 
-To scale the application:
+The application is designed to scale horizontally. Here are the scaling options:
 
-1. **Add more Celery workers**:
+### Quick Scaling
+
+1. **Scale web servers**:
    ```bash
-   celery -A app.celery worker --loglevel=info --concurrency=4
+   docker-compose -f docker-compose.prod.yml up -d --scale web=5
    ```
 
-2. **Use multiple web servers** behind a load balancer
+2. **Scale Celery workers**:
+   ```bash
+   docker-compose -f docker-compose.prod.yml up -d --scale celery=3
+   ```
 
-3. **Use a production database** with connection pooling
+3. **Scale both**:
+   ```bash
+   docker-compose -f docker-compose.prod.yml up -d --scale web=5 --scale celery=3
+   ```
 
-4. **Set up Redis clustering** for high availability
+### Production Scaling
+
+For production deployment with full scaling capabilities:
+
+1. **Run the production deployment script**:
+   ```bash
+   ./deploy.sh
+   ```
+
+2. **Manual scaling with resource limits**:
+   ```bash
+   # Scale web servers with resource limits
+   docker-compose -f docker-compose.prod.yml up -d --scale web=3
+   
+   # Scale Celery workers with resource limits
+   docker-compose -f docker-compose.prod.yml up -d --scale celery=2
+   ```
+
+3. **Database scaling**:
+   - Use PostgreSQL with connection pooling
+   - Set up read replicas for read-heavy workloads
+   - Use Redis clustering for high availability
+
+4. **Load balancer scaling**:
+   - Nginx automatically load balances between web instances
+   - Configure additional Nginx instances for high availability
+   - Use external load balancers (AWS ALB, GCP LB, etc.)
+
+### Monitoring Scaling
+
+Monitor your scaling with:
+
+- **Grafana Dashboard**: http://localhost:3000 (admin/admin)
+- **Prometheus Metrics**: http://localhost:9090
+- **Application Metrics**: https://localhost/metrics
+
+### Auto-scaling
+
+For automatic scaling based on load:
+
+1. **Set up monitoring alerts** in Grafana
+2. **Use Kubernetes** for container orchestration
+3. **Implement horizontal pod autoscaling** (HPA)
+4. **Use cloud auto-scaling groups** (AWS, GCP, Azure)
 
 ## Architecture
 
@@ -143,10 +209,14 @@ To scale the application:
 ## Security Features
 
 - User authentication and authorization
-- Secure file upload validation
+- Secure file upload validation with comprehensive checks
 - User data isolation
 - CSRF protection
 - Input sanitization
+- Rate limiting (5 uploads per hour per user)
+- Environment variable configuration for secrets
+- File type and structure validation
+- Automatic cleanup of uploaded files after processing
 
 ## Troubleshooting
 

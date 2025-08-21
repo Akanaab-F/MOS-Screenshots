@@ -8,9 +8,10 @@ services:
     environment:
       - FLASK_APP=app.py
       - FLASK_ENV=production
-      - SECRET_KEY=your-super-secret-key-change-this
-      - DATABASE_URL=sqlite:///routes.db
+      - SECRET_KEY=${SECRET_KEY:-your-super-secret-key-change-this}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///routes.db}
       - REDIS_URL=redis://redis:6379/0
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
     volumes:
       - ./uploads:/app/uploads
       - ./screenshots:/app/screenshots
@@ -34,9 +35,10 @@ services:
     environment:
       - FLASK_APP=app.py
       - FLASK_ENV=production
-      - SECRET_KEY=your-super-secret-key-change-this
-      - DATABASE_URL=sqlite:///routes.db
+      - SECRET_KEY=${SECRET_KEY:-your-super-secret-key-change-this}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///routes.db}
       - REDIS_URL=redis://redis:6379/0
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
     volumes:
       - ./uploads:/app/uploads
       - ./screenshots:/app/screenshots
