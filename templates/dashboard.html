@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Route Screenshot Generator{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-8">
+        <h2><i class="fas fa-tachometer-alt me-2"></i>Dashboard</h2>
+        <p class="text-muted">Welcome back, {{ current_user.username }}!</p>
+    </div>
+    <div class="col-md-4 text-end">
+        <a href="{{ url_for('upload') }}" class="btn btn-primary">
+            <i class="fas fa-upload me-2"></i>Upload New File
+        </a>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-tasks fa-2x text-primary mb-2"></i>
+                <h5 class="card-title">{{ jobs|length }}</h5>
+                <p class="card-text text-muted">Total Jobs</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-check-circle fa-2x text-success mb-2"></i>
+                <h5 class="card-title">{{ jobs|selectattr('status', 'equalto', 'completed')|list|length }}</h5>
+                <p class="card-text text-muted">Completed</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-spinner fa-2x text-warning mb-2"></i>
+                <h5 class="card-title">{{ jobs|selectattr('status', 'equalto', 'processing')|list|length }}</h5>
+                <p class="card-text text-muted">Processing</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-exclamation-triangle fa-2x text-danger mb-2"></i>
+                <h5 class="card-title">{{ jobs|selectattr('status', 'equalto', 'failed')|list|length }}</h5>
+                <p class="card-text text-muted">Failed</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h5><i class="fas fa-history me-2"></i>Job History</h5>
+    </div>
+    <div class="card-body">
+        {% if jobs %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Status</th>
+                            <th>Progress</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for job in jobs %}
+                        <tr data-job-id="{{ job.job_id }}">
+                            <td>
+                                <i class="fas fa-file-excel me-2 text-success"></i>
+                                {{ job.filename }}
+                            </td>
+                            <td>
+                                {% if job.status == 'pending' %}
+                                    <span class="badge bg-secondary status-badge">Pending</span>
+                                {% elif job.status == 'processing' %}
+                                    <span class="badge bg-warning status-badge">Processing</span>
+                                {% elif job.status == 'completed' %}
+                                    <span class="badge bg-success status-badge">Completed</span>
+                                {% elif job.status == 'failed' %}
+                                    <span class="badge bg-danger status-badge">Failed</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if job.status in ['processing', 'completed'] %}
+                                    <div class="progress">
+                                        <div class="progress-bar" role="progressbar" 
+                                             style="width: {{ job.progress }}%" 
+                                             aria-valuenow="{{ job.progress }}" 
+                                             aria-valuemin="0" 
+                                             aria-valuemax="100">
+                                            {{ job.progress }}%
+                                        </div>
+                                    </div>
+                                    <small class="text-muted">
+                                        {{ job.completed_routes }}/{{ job.total_routes }} routes
+                                    </small>
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <small>{{ job.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                            </td>
+                            <td>
+                                {% if job.status == 'completed' %}
+                                    <a href="{{ url_for('download_results', job_id=job.job_id) }}" 
+                                       class="btn btn-sm btn-success">
+                                        <i class="fas fa-download me-1"></i>Download
+                                    </a>
+                                {% elif job.status == 'failed' %}
+                                    <button class="btn btn-sm btn-outline-secondary" 
+                                            onclick="showError('{{ job.error_message }}')">
+                                        <i class="fas fa-info-circle me-1"></i>Details
+                                    </button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center py-4">
+                <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">No jobs yet</h5>
+                <p class="text-muted">Upload your first Excel file to get started!</p>
+                <a href="{{ url_for('upload') }}" class="btn btn-primary">
+                    <i class="fas fa-upload me-2"></i>Upload File
+                </a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Error Modal -->
+<div class="modal fade" id="errorModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Error Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p id="errorMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-refresh processing jobs
+function updateJobStatus() {
+    const processingRows = document.querySelectorAll('tr[data-job-id] .badge.bg-warning');
+    processingRows.forEach(badge => {
+        const row = badge.closest('tr');
+        const jobId = row.dataset.jobId;
+        
+        fetch(`/job/${jobId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status !== 'processing') {
+                    location.reload(); // Reload to show updated status
+                } else {
+                    // Update progress bar
+                    const progressBar = row.querySelector('.progress-bar');
+                    if (progressBar) {
+                        progressBar.style.width = data.progress + '%';
+                        progressBar.textContent = data.progress + '%';
+                        progressBar.setAttribute('aria-valuenow', data.progress);
+                    }
+                    
+                    // Update route count
+                    const routeCount = row.querySelector('.text-muted');
+                    if (routeCount) {
+                        routeCount.textContent = `${data.completed_routes}/${data.total_routes} routes`;
+                    }
+                }
+            })
+            .catch(error => console.error('Error updating job status:', error));
+    });
+}
+
+// Update status every 5 seconds for processing jobs
+if (document.querySelector('.badge.bg-warning')) {
+    setInterval(updateJobStatus, 5000);
+}
+
+function showError(message) {
+    document.getElementById('errorMessage').textContent = message;
+    new bootstrap.Modal(document.getElementById('errorModal')).show();
+}
+</script>
+{% endblock %} 

@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Welcome - Route Screenshot Generator{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 text-center">
+        <div class="card">
+            <div class="card-body py-5">
+                <h1 class="display-4 mb-4">
+                    <i class="fas fa-route text-primary"></i>
+                    Route Screenshot Generator
+                </h1>
+                <p class="lead mb-4">
+                    Automatically generate Google Maps route screenshots from your Excel data.
+                    Perfect for logistics, transportation planning, and route analysis.
+                </p>
+                
+                <div class="row mb-5">
+                    <div class="col-md-4">
+                        <div class="text-center">
+                            <i class="fas fa-upload fa-3x text-primary mb-3"></i>
+                            <h5>Upload Excel File</h5>
+                            <p class="text-muted">Upload your transportation data in Excel format</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-center">
+                            <i class="fas fa-cogs fa-3x text-primary mb-3"></i>
+                            <h5>Automatic Processing</h5>
+                            <p class="text-muted">Our system processes each route and captures screenshots</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-center">
+                            <i class="fas fa-download fa-3x text-primary mb-3"></i>
+                            <h5>Download Results</h5>
+                            <p class="text-muted">Get all route screenshots in a convenient ZIP file</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-grid gap-2 d-md-block">
+                    <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg me-md-2">
+                        <i class="fas fa-user-plus me-2"></i>Get Started
+                    </a>
+                    <a href="{{ url_for('login') }}" class="btn btn-outline-primary btn-lg">
+                        <i class="fas fa-sign-in-alt me-2"></i>Login
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-5">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5><i class="fas fa-info-circle me-2"></i>How It Works</h5>
+            </div>
+            <div class="card-body">
+                <ol class="list-group list-group-numbered">
+                    <li class="list-group-item">Prepare your Excel file with site coordinates and warehouse information</li>
+                    <li class="list-group-item">Upload the file through our web interface</li>
+                    <li class="list-group-item">Our system automatically processes each route</li>
+                    <li class="list-group-item">Download all route screenshots in a ZIP file</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5><i class="fas fa-check-circle me-2"></i>Features</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item">
+                        <i class="fas fa-users me-2 text-success"></i>Multi-user support
+                    </li>
+                    <li class="list-group-item">
+                        <i class="fas fa-clock me-2 text-success"></i>Real-time progress tracking
+                    </li>
+                    <li class="list-group-item">
+                        <i class="fas fa-shield-alt me-2 text-success"></i>Secure file handling
+                    </li>
+                    <li class="list-group-item">
+                        <i class="fas fa-mobile-alt me-2 text-success"></i>Mobile-friendly interface
+                    </li>
+                    <li class="list-group-item">
+                        <i class="fas fa-history me-2 text-success"></i>Job history and management
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
