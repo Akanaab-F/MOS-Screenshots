@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Route Screenshot Generator with Python-based Redis Alternative
+Route Screenshot Generator - Debug Version
+This version includes detailed logging to troubleshoot the pending task issue
 """
 
 import os
@@ -9,6 +10,7 @@ import zipfile
 import threading
 import time
 import queue
+import logging
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
@@ -19,6 +21,10 @@ import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 import json
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Create Flask app
 app = Flask(__name__)
@@ -82,30 +88,41 @@ def process_screenshots_worker():
     """Background worker for processing screenshots"""
     global worker_running
     
+    logger.info("🚀 Background worker started and running...")
+    
     while worker_running:
         try:
             # Get task from queue (non-blocking)
             try:
+                logger.info(f"📋 Checking task queue... (Queue size: {task_queue.qsize()})")
                 task = task_queue.get_nowait()
+                logger.info(f"✅ Got task: {task}")
             except queue.Empty:
-                time.sleep(1)
+                logger.info("⏳ No tasks in queue, waiting...")
+                time.sleep(2)
                 continue
             
             job_id, filepath = task
+            logger.info(f"🔄 Processing job: {job_id} with file: {filepath}")
             
             try:
                 # Update job status
                 with app.app_context():
                     job = Job.query.filter_by(job_id=job_id).first()
                     if not job:
+                        logger.error(f"❌ Job not found: {job_id}")
                         continue
                     
+                    logger.info(f"📊 Updating job status to 'processing'")
                     job.status = 'processing'
                     job.progress = 0
                     db.session.commit()
+                    logger.info(f"✅ Job status updated successfully")
                 
                 # Read Excel file
+                logger.info(f"📖 Reading Excel file: {filepath}")
                 excel_data = pd.read_excel(filepath, sheet_name=None)
+                logger.info(f"📊 Excel sheets found: {list(excel_data.keys())}")
                 
                 # Validate required sheets
                 required_sheets = ['Transportation', 'Warehouse', 'Region']
@@ -119,6 +136,7 @@ def process_screenshots_worker():
                 region_df = excel_data['Region']
                 
                 total_routes = len(transportation_df)
+                logger.info(f"🛣️ Total routes to process: {total_routes}")
                 
                 # Update total routes
                 with app.app_context():
@@ -126,6 +144,7 @@ def process_screenshots_worker():
                     db.session.commit()
                 
                 # Setup Chrome
+                logger.info("🌐 Setting up Chrome browser...")
                 chrome_options = Options()
                 chrome_options.add_argument("--headless")
                 chrome_options.add_argument("--no-sandbox")
@@ -135,6 +154,7 @@ def process_screenshots_worker():
                 driver = webdriver.Chrome(options=chrome_options)
                 screenshots_dir = f"screenshots/{job_id}"
                 os.makedirs(screenshots_dir, exist_ok=True)
+                logger.info(f"📁 Screenshots directory created: {screenshots_dir}")
                 
                 completed = 0
                 
@@ -147,9 +167,12 @@ def process_screenshots_worker():
                             site_id = row['ID']
                             warehouse_name = row['warehouse']
                             
+                            logger.info(f"📍 Processing route {index + 1}/{total_routes}: Site {site_id}")
+                            
                             # Find warehouse coordinates
                             warehouse_row = warehouse_df[warehouse_df['Warehouse'] == warehouse_name]
                             if warehouse_row.empty:
+                                logger.warning(f"⚠️ Warehouse not found: {warehouse_name}")
                                 continue
                             
                             warehouse_lat = warehouse_row.iloc[0]['latitude']
@@ -157,6 +180,7 @@ def process_screenshots_worker():
                             
                             # Generate Google Maps URL
                             url = f"https://www.google.com/maps/dir/{warehouse_lat},{warehouse_lng}/{lat},{lng}"
+                            logger.info(f"🌐 Navigating to: {url}")
                             
                             # Navigate and take screenshot
                             driver.get(url)
@@ -165,6 +189,7 @@ def process_screenshots_worker():
                             # Take screenshot
                             screenshot_path = os.path.join(screenshots_dir, f"route_{site_id}.png")
                             driver.save_screenshot(screenshot_path)
+                            logger.info(f"📸 Screenshot saved: {screenshot_path}")
                             
                             completed += 1
                             
@@ -174,18 +199,22 @@ def process_screenshots_worker():
                                 job.progress = progress
                                 job.completed_routes = completed
                                 db.session.commit()
+                                logger.info(f"📊 Progress: {progress}% ({completed}/{total_routes})")
                             
                         except Exception as e:
-                            print(f"Error processing route {index}: {e}")
+                            logger.error(f"❌ Error processing route {index}: {e}")
                             continue
                     
                     # Create ZIP file
+                    logger.info("📦 Creating ZIP file...")
                     zip_path = f"screenshots/{job_id}_routes.zip"
                     with zipfile.ZipFile(zip_path, 'w') as zipf:
                         for filename in os.listdir(screenshots_dir):
                             if filename.endswith('.png'):
                                 filepath = os.path.join(screenshots_dir, filename)
                                 zipf.write(filepath, filename)
+                    
+                    logger.info(f"✅ ZIP file created: {zip_path}")
                     
                     # Update job status
                     with app.app_context():
@@ -194,11 +223,14 @@ def process_screenshots_worker():
                         job.completed_at = datetime.utcnow()
                         job.result_file = zip_path
                         db.session.commit()
+                        logger.info(f"🎉 Job completed successfully!")
                     
                 finally:
                     driver.quit()
+                    logger.info("🔒 Chrome browser closed")
                     
             except Exception as e:
+                logger.error(f"❌ Job processing failed: {e}")
                 # Update job status on error
                 with app.app_context():
                     job = Job.query.filter_by(job_id=job_id).first()
@@ -206,12 +238,14 @@ def process_screenshots_worker():
                         job.status = 'failed'
                         job.error_message = str(e)
                         db.session.commit()
+                        logger.info(f"📝 Job status updated to 'failed'")
             
             # Mark task as done
             task_queue.task_done()
+            logger.info(f"✅ Task completed for job: {job_id}")
             
         except Exception as e:
-            print(f"Worker error: {e}")
+            logger.error(f"❌ Worker error: {e}")
             continue
 
 def start_worker():
@@ -222,7 +256,11 @@ def start_worker():
         worker_running = True
         worker_thread = threading.Thread(target=process_screenshots_worker, daemon=True)
         worker_thread.start()
-        print("✅ Background worker started")
+        logger.info("✅ Background worker started")
+        return True
+    else:
+        logger.info("⚠️ Worker already running")
+        return False
 
 @app.route('/')
 def index():
@@ -302,6 +340,7 @@ def upload():
             
             filepath = os.path.join(upload_dir, filename)
             file.save(filepath)
+            logger.info(f"📁 File uploaded: {filepath}")
             
             # Create job record
             job_id = str(uuid.uuid4())
@@ -313,9 +352,12 @@ def upload():
             )
             db.session.add(new_job)
             db.session.commit()
+            logger.info(f"📝 Job created: {job_id} for file: {filename}")
             
             # Add task to queue
             task_queue.put((job_id, filepath))
+            logger.info(f"📋 Task added to queue: {job_id}")
+            logger.info(f"📊 Current queue size: {task_queue.qsize()}")
             
             flash('File uploaded successfully! Processing will start soon.')
             return redirect(url_for('dashboard'))
@@ -368,11 +410,12 @@ def debug_info():
     })
 
 if __name__ == '__main__':
-    print("🚀 Starting Route Screenshot Generator (Alternative Version)")
-    print("📝 Note: This version uses Python threading instead of Redis/Celery")
+    print("🚀 Starting Route Screenshot Generator (Debug Version)")
+    print("📝 This version includes detailed logging for troubleshooting")
     print("🌐 Access the application at: http://localhost:5000")
     print("📊 Database: SQLite (routes.db)")
     print("🔑 Test credentials will be created on first registration")
+    print("🐛 Debug info available at: /debug")
     print()
     
     # Create tables if they don't exist
@@ -381,6 +424,9 @@ if __name__ == '__main__':
         print("✅ Database tables created/verified")
     
     # Start background worker
-    start_worker()
+    if start_worker():
+        print("✅ Background worker started successfully")
+    else:
+        print("⚠️ Background worker already running")
     
     app.run(debug=True, host='0.0.0.0', port=5000)

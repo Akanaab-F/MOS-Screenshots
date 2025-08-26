@@ -112,7 +112,7 @@
                             </td>
                             <td>
                                 {% if job.status == 'completed' %}
-                                    <a href="{{ url_for('download_results', job_id=job.job_id) }}" 
+                                    <a href="{{ url_for('download', job_id=job.id) }}" 
                                        class="btn btn-sm btn-success">
                                         <i class="fas fa-download me-1"></i>Download
                                     </a>
@@ -169,10 +169,17 @@ function updateJobStatus() {
         const row = badge.closest('tr');
         const jobId = row.dataset.jobId;
         
-        fetch(`/job/${jobId}`)
-            .then(response => response.json())
+        fetch(`/status/${jobId}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
             .then(data => {
+                console.log(`Job ${jobId} status:`, data);
                 if (data.status !== 'processing') {
+                    console.log(`Job ${jobId} completed, reloading page...`);
                     location.reload(); // Reload to show updated status
                 } else {
                     // Update progress bar
@@ -190,7 +197,10 @@ function updateJobStatus() {
                     }
                 }
             })
-            .catch(error => console.error('Error updating job status:', error));
+            .catch(error => {
+                console.error(`Error updating job ${jobId} status:`, error);
+                // Don't reload on error, just log it
+            });
     });
 }
 
