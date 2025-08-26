@@ -18,65 +18,55 @@ A scalable web application that automatically generates Google Maps route screen
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
-   cd route-screenshot-generator
+   git clone https://github.com/Akanaab-F/MOS-Screenshots.git
+   cd MOS-Screenshots
    ```
 
-2. **Set up environment variables**
+2. **Start the application**
    ```bash
-   # Copy the example environment file
-   cp env.example .env
+   # Windows
+   start.bat
    
-   # Edit .env and set your secret key and other variables
-   # SECRET_KEY=your-super-secret-key-change-this-in-production
-   # GOOGLE_MAPS_API_KEY=your-google-maps-api-key-here (optional)
-   ```
-
-3. **Start the application**
-   ```bash
+   # Linux/Mac
    docker-compose up -d
    ```
 
-4. **Access the application**
+3. **Access the application**
    - Open your browser and go to `http://localhost:5000`
    - Register a new account
    - Upload your Excel file and start processing
 
 ### Option 2: Local Development
 
-1. **Install dependencies**
+1. **Clone the repository**
    ```bash
-   pip install -r requirements.txt
+   git clone https://github.com/Akanaab-F/MOS-Screenshots.git
+   cd MOS-Screenshots
    ```
 
-2. **Install Chrome browser** (if not already installed)
-
-3. **Set up environment variables**
+2. **Start locally (Windows)**
    ```bash
-   # Copy the example environment file
-   cp env.example .env
+   start_local.bat
+   ```
+
+3. **Or manually:**
+   ```bash
+   # Create virtual environment
+   python -m venv .venv
+   .venv\Scripts\activate     # Windows
    
-   # Edit .env and set your variables, or export them:
-   export SECRET_KEY="your-secret-key-here"
-   export DATABASE_URL="sqlite:///routes.db"
-   export REDIS_URL="redis://localhost:6379/0"
-   export GOOGLE_MAPS_API_KEY="your-google-maps-api-key-here"  # optional
-   ```
-
-4. **Start Redis** (required for background processing)
-   ```bash
-   redis-server
-   ```
-
-5. **Start the application**
-   ```bash
+   # Install dependencies
+   pip install -r requirements.txt
+   
+   # Run the application
    python app.py
    ```
 
-6. **Start Celery worker** (in a separate terminal)
-   ```bash
-   celery -A app.celery worker --loglevel=info
-   ```
+4. **Access the application**
+   - Open your browser and go to `http://localhost:5000`
+   - Register a new account
+   - Upload your Excel file and start processing
+   - **Note**: Chrome browser will open for cookie consent handling
 
 ## Excel File Format
 

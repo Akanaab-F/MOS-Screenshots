@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Route Screenshot Generator with Python-based Redis Alternative
+Route Screenshot Generator - Fixed Version
+This version handles cookie consent and fixes progress updates
 """
 
 import os
@@ -18,54 +19,45 @@ from flask_sqlalchemy import SQLAlchemy
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import json
 
-# Create Flask app
+# Flask app setup
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-super-secret-key-change-this-in-production'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///routes.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Initialize SQLAlchemy
+# Database setup
 db = SQLAlchemy(app)
 
-# Initialize login manager
+# Login manager
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# Simple task queue (Redis alternative)
+# Background processing
 task_queue = queue.Queue()
 worker_thread = None
 worker_running = False
 
-# User model
+# Models
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(120), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    def is_authenticated(self):
-        return True
-    
-    def is_active(self):
-        return True
-    
-    def is_anonymous(self):
-        return False
-    
-    def get_id(self):
-        return str(self.id)
+    jobs = db.relationship('Job', backref='user', lazy=True)
 
-# Job model
 class Job(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     job_id = db.Column(db.String(36), unique=True, nullable=False)
     filename = db.Column(db.String(255), nullable=False)
-    status = db.Column(db.String(20), default='pending')
+    status = db.Column(db.String(20), default='pending')  # pending, processing, completed, failed
     progress = db.Column(db.Integer, default=0)
     total_routes = db.Column(db.Integer, default=0)
     completed_routes = db.Column(db.Integer, default=0)
@@ -78,23 +70,66 @@ class Job(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+def handle_cookie_consent(driver):
+    """Handle Google cookie consent dialog"""
+    try:
+        # Wait for cookie consent dialog to appear
+        wait = WebDriverWait(driver, 10)
+        
+        # Try to find and click "Accept all" button
+        try:
+            accept_button = wait.until(
+                EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Accept all')]"))
+            )
+            accept_button.click()
+            print("✅ Cookie consent accepted automatically")
+            time.sleep(2)
+            return True
+        except TimeoutException:
+            pass
+        
+        # Try alternative selectors for accept button
+        try:
+            accept_button = driver.find_element(By.XPATH, "//button[contains(@aria-label, 'Accept')]")
+            accept_button.click()
+            print("✅ Cookie consent accepted (alternative method)")
+            time.sleep(2)
+            return True
+        except NoSuchElementException:
+            pass
+        
+        # If no accept button found, try to find and click "Reject all"
+        try:
+            reject_button = driver.find_element(By.XPATH, "//button[contains(., 'Reject all')]")
+            reject_button.click()
+            print("✅ Cookie consent rejected")
+            time.sleep(2)
+            return True
+        except NoSuchElementException:
+            pass
+        
+        print("⚠️ No cookie consent dialog found or handled")
+        return False
+        
+    except Exception as e:
+        print(f"⚠️ Error handling cookie consent: {e}")
+        return False
+
 def process_screenshots_worker():
     """Background worker for processing screenshots"""
     global worker_running
     
     while worker_running:
         try:
-            # Get task from queue (non-blocking)
-            try:
-                task = task_queue.get_nowait()
-            except queue.Empty:
-                time.sleep(1)
-                continue
+            # Get task from queue
+            task = task_queue.get(timeout=2)
+            if task is None:
+                break
             
             job_id, filepath = task
+            print(f"🔄 Processing job: {job_id}")
             
             try:
-                # Update job status
                 with app.app_context():
                     job = Job.query.filter_by(job_id=job_id).first()
                     if not job:
@@ -102,6 +137,7 @@ def process_screenshots_worker():
                     
                     job.status = 'processing'
                     job.progress = 0
+                    job.completed_routes = 0
                     db.session.commit()
                 
                 # Read Excel file
@@ -125,14 +161,19 @@ def process_screenshots_worker():
                     job.total_routes = total_routes
                     db.session.commit()
                 
-                # Setup Chrome
+                # Setup Chrome - NOT headless to handle cookie consent
                 chrome_options = Options()
-                chrome_options.add_argument("--headless")
+                # chrome_options.add_argument("--headless")  # REMOVED: Allow browser to show for cookie consent
                 chrome_options.add_argument("--no-sandbox")
                 chrome_options.add_argument("--disable-dev-shm-usage")
                 chrome_options.add_argument("--window-size=1920,1080")
+                chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+                chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                chrome_options.add_experimental_option('useAutomationExtension', False)
                 
                 driver = webdriver.Chrome(options=chrome_options)
+                driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                
                 screenshots_dir = f"screenshots/{job_id}"
                 os.makedirs(screenshots_dir, exist_ok=True)
                 
@@ -158,9 +199,19 @@ def process_screenshots_worker():
                             # Generate Google Maps URL
                             url = f"https://www.google.com/maps/dir/{warehouse_lat},{warehouse_lng}/{lat},{lng}"
                             
-                            # Navigate and take screenshot
+                            print(f"📍 Processing route {completed + 1}/{total_routes}: {site_id}")
+                            
+                            # Navigate to page
                             driver.get(url)
                             time.sleep(3)  # Wait for page to load
+                            
+                            # Handle cookie consent on first page load
+                            if completed == 0:
+                                handle_cookie_consent(driver)
+                                time.sleep(2)
+                            
+                            # Wait for maps to load
+                            time.sleep(5)
                             
                             # Take screenshot
                             screenshot_path = os.path.join(screenshots_dir, f"route_{site_id}.png")
@@ -168,15 +219,16 @@ def process_screenshots_worker():
                             
                             completed += 1
                             
-                            # Update progress
+                            # Update progress more frequently
                             progress = int((completed / total_routes) * 100)
                             with app.app_context():
                                 job.progress = progress
                                 job.completed_routes = completed
                                 db.session.commit()
+                                print(f"📊 Progress: {progress}% ({completed}/{total_routes})")
                             
                         except Exception as e:
-                            print(f"Error processing route {index}: {e}")
+                            print(f"❌ Error processing route {index}: {e}")
                             continue
                     
                     # Create ZIP file
@@ -194,6 +246,7 @@ def process_screenshots_worker():
                         job.completed_at = datetime.utcnow()
                         job.result_file = zip_path
                         db.session.commit()
+                        print(f"✅ Job completed: {job_id}")
                     
                 finally:
                     driver.quit()
@@ -206,6 +259,7 @@ def process_screenshots_worker():
                         job.status = 'failed'
                         job.error_message = str(e)
                         db.session.commit()
+                        print(f"❌ Job failed: {job_id} - {e}")
             
             # Mark task as done
             task_queue.task_done()
@@ -297,48 +351,44 @@ def upload():
             
             # Save file
             upload_dir = 'uploads'
-            if not os.path.exists(upload_dir):
-                os.makedirs(upload_dir)
-            
+            os.makedirs(upload_dir, exist_ok=True)
             filepath = os.path.join(upload_dir, filename)
             file.save(filepath)
             
-            # Create job record
+            # Create job
             job_id = str(uuid.uuid4())
-            new_job = Job(
-                user_id=current_user.id, 
+            job = Job(
+                user_id=current_user.id,
                 job_id=job_id,
-                filename=filename, 
+                filename=filename,
                 status='pending'
             )
-            db.session.add(new_job)
+            db.session.add(job)
             db.session.commit()
             
-            # Add task to queue
+            # Add to processing queue
             task_queue.put((job_id, filepath))
             
-            flash('File uploaded successfully! Processing will start soon.')
+            flash('File uploaded successfully! Processing started.')
             return redirect(url_for('dashboard'))
         else:
             flash('Please upload an Excel (.xlsx) file')
     
     return render_template('upload.html')
 
-@app.route('/status/<int:job_id>')
+@app.route('/status/<job_id>')
 @login_required
-def status(job_id):
-    job = Job.query.filter_by(id=job_id, user_id=current_user.id).first()
-    
+def job_status(job_id):
+    job = Job.query.filter_by(job_id=job_id, user_id=current_user.id).first()
     if job:
         return jsonify({
-            'status': job.status, 
-            'progress': job.progress or 0,
+            'status': job.status,
+            'progress': job.progress,
             'total_routes': job.total_routes,
             'completed_routes': job.completed_routes,
             'error_message': job.error_message
         })
-    else:
-        return jsonify({'error': 'Job not found'}), 404
+    return jsonify({'error': 'Job not found'}), 404
 
 @app.route('/download/<int:job_id>')
 @login_required
@@ -368,19 +418,21 @@ def debug_info():
     })
 
 if __name__ == '__main__':
-    print("🚀 Starting Route Screenshot Generator (Alternative Version)")
-    print("📝 Note: This version uses Python threading instead of Redis/Celery")
+    # Create database tables
+    with app.app_context():
+        db.create_all()
+    
+    # Start background worker
+    start_worker()
+    
+    print("🚀 Starting Route Screenshot Generator (Fixed Version)")
+    print("📝 Note: This version handles cookie consent and fixes progress updates")
     print("🌐 Access the application at: http://localhost:5000")
     print("📊 Database: SQLite (routes.db)")
     print("🔑 Test credentials will be created on first registration")
     print()
-    
-    # Create tables if they don't exist
-    with app.app_context():
-        db.create_all()
-        print("✅ Database tables created/verified")
-    
-    # Start background worker
-    start_worker()
+    print("⚠️ IMPORTANT: Chrome browser will open for cookie consent handling")
+    print("   Please accept/reject cookies when prompted for the first route")
+    print()
     
     app.run(debug=True, host='0.0.0.0', port=5000)

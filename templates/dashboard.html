@@ -165,6 +165,8 @@
 // Auto-refresh processing jobs
 function updateJobStatus() {
     const processingRows = document.querySelectorAll('tr[data-job-id] .badge.bg-warning');
+    let hasUpdates = false;
+    
     processingRows.forEach(badge => {
         const row = badge.closest('tr');
         const jobId = row.dataset.jobId;
@@ -178,35 +180,76 @@ function updateJobStatus() {
             })
             .then(data => {
                 console.log(`Job ${jobId} status:`, data);
-                if (data.status !== 'processing') {
+                
+                if (data.status === 'completed') {
                     console.log(`Job ${jobId} completed, reloading page...`);
-                    location.reload(); // Reload to show updated status
-                } else {
+                    location.reload(); // Reload to show completed status and download link
+                } else if (data.status === 'failed') {
+                    console.log(`Job ${jobId} failed, reloading page...`);
+                    location.reload(); // Reload to show error status
+                } else if (data.status === 'processing') {
                     // Update progress bar
                     const progressBar = row.querySelector('.progress-bar');
                     if (progressBar) {
-                        progressBar.style.width = data.progress + '%';
-                        progressBar.textContent = data.progress + '%';
-                        progressBar.setAttribute('aria-valuenow', data.progress);
+                        const newProgress = data.progress || 0;
+                        const currentProgress = parseInt(progressBar.style.width) || 0;
+                        
+                        if (newProgress !== currentProgress) {
+                            progressBar.style.width = newProgress + '%';
+                            progressBar.textContent = newProgress + '%';
+                            progressBar.setAttribute('aria-valuenow', newProgress);
+                            hasUpdates = true;
+                        }
                     }
                     
                     // Update route count
                     const routeCount = row.querySelector('.text-muted');
                     if (routeCount) {
-                        routeCount.textContent = `${data.completed_routes}/${data.total_routes} routes`;
+                        const newText = `${data.completed_routes || 0}/${data.total_routes || 0} routes`;
+                        if (routeCount.textContent !== newText) {
+                            routeCount.textContent = newText;
+                            hasUpdates = true;
+                        }
                     }
                 }
             })
             .catch(error => {
                 console.error(`Error updating job ${jobId} status:`, error);
-                // Don't reload on error, just log it
             });
     });
+    
+    // If we have updates, also update the summary cards
+    if (hasUpdates) {
+        updateSummaryCards();
+    }
 }
 
-// Update status every 5 seconds for processing jobs
+// Update summary cards
+function updateSummaryCards() {
+    fetch('/dashboard')
+        .then(response => response.text())
+        .then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            // Update summary cards
+            const newCards = doc.querySelectorAll('.col-md-3 .card-body');
+            const currentCards = document.querySelectorAll('.col-md-3 .card-body');
+            
+            newCards.forEach((newCard, index) => {
+                if (currentCards[index]) {
+                    currentCards[index].innerHTML = newCard.innerHTML;
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error updating summary cards:', error);
+        });
+}
+
+// Update status every 2 seconds for more responsive updates
 if (document.querySelector('.badge.bg-warning')) {
-    setInterval(updateJobStatus, 5000);
+    setInterval(updateJobStatus, 2000);
 }
 
 function showError(message) {
