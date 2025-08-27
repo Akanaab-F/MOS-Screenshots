@@ -28,7 +28,10 @@ import json
 # Flask app setup
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///routes.db'
+
+# Use absolute path for database
+db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'routes.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Database setup
@@ -51,6 +54,22 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(120), nullable=False)
     jobs = db.relationship('Job', backref='user', lazy=True)
+    
+    # Flask-Login required properties
+    @property
+    def is_active(self):
+        return True
+    
+    @property
+    def is_authenticated(self):
+        return True
+    
+    @property
+    def is_anonymous(self):
+        return False
+    
+    def get_id(self):
+        return str(self.id)
 
 class Job(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -68,7 +87,7 @@ class Job(db.Model):
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    return db.session.get(User, int(user_id))
 
 def handle_cookie_consent(driver):
     """Handle Google cookie consent dialog"""
@@ -119,6 +138,8 @@ def process_screenshots_worker():
     """Background worker for processing screenshots"""
     global worker_running
     
+    print("🔄 Background worker started and ready to process tasks")
+    
     while worker_running:
         try:
             # Get task from queue
@@ -128,6 +149,26 @@ def process_screenshots_worker():
             
             job_id, filepath = task
             print(f"🔄 Processing job: {job_id}")
+            
+            # Verify database connection
+            try:
+                with app.app_context():
+                    # Test database connection
+                    from sqlalchemy import text
+                    db.session.execute(text("SELECT 1"))
+                    print("✅ Database connection verified")
+                    
+                    # Test job retrieval
+                    job = Job.query.filter_by(job_id=job_id).first()
+                    if job:
+                        print(f"✅ Found job: {job.job_id} - Status: {job.status}")
+                    else:
+                        print(f"❌ Job not found: {job_id}")
+                        continue
+                        
+            except Exception as e:
+                print(f"❌ Database connection failed: {e}")
+                continue
             
             try:
                 with app.app_context():
@@ -155,11 +196,20 @@ def process_screenshots_worker():
                 region_df = excel_data['Region']
                 
                 total_routes = len(transportation_df)
+                print(f"📊 Total routes to process: {total_routes}")
                 
-                # Update total routes
+                # Update total routes immediately
                 with app.app_context():
-                    job.total_routes = total_routes
-                    db.session.commit()
+                    job = Job.query.filter_by(job_id=job_id).first()
+                    if job:
+                        job.total_routes = total_routes
+                        db.session.commit()
+                        print(f"✅ Updated total_routes to {total_routes}")
+                    else:
+                        print(f"❌ Could not find job {job_id} to update total_routes")
+                
+                # Small delay to ensure database is updated
+                time.sleep(0.5)
                 
                 # Setup Chrome - NOT headless to handle cookie consent
                 chrome_options = Options()
@@ -182,7 +232,7 @@ def process_screenshots_worker():
                 try:
                     for index, row in transportation_df.iterrows():
                         try:
-                            # Get coordinates
+                            # Get coordinates (using correct column names from Excel)
                             lat = row['latitude']
                             lng = row['longitude']
                             site_id = row['ID']
@@ -196,7 +246,7 @@ def process_screenshots_worker():
                             warehouse_lat = warehouse_row.iloc[0]['latitude']
                             warehouse_lng = warehouse_row.iloc[0]['longitude']
                             
-                            # Generate Google Maps URL
+                            # Generate Google Maps URL (latitude,longitude format)
                             url = f"https://www.google.com/maps/dir/{warehouse_lat},{warehouse_lng}/{lat},{lng}"
                             
                             print(f"📍 Processing route {completed + 1}/{total_routes}: {site_id}")
@@ -221,11 +271,22 @@ def process_screenshots_worker():
                             
                             # Update progress more frequently
                             progress = int((completed / total_routes) * 100)
-                            with app.app_context():
-                                job.progress = progress
-                                job.completed_routes = completed
-                                db.session.commit()
-                                print(f"📊 Progress: {progress}% ({completed}/{total_routes})")
+                            try:
+                                with app.app_context():
+                                    # Refresh job from database
+                                    job = Job.query.filter_by(job_id=job_id).first()
+                                    if job:
+                                        job.progress = progress
+                                        job.completed_routes = completed
+                                        db.session.commit()
+                                        print(f"📊 Progress: {progress}% ({completed}/{total_routes})")
+                                    else:
+                                        print(f"❌ Could not find job {job_id} for progress update")
+                                
+                                # Force a small delay to ensure database is updated
+                                time.sleep(0.1)
+                            except Exception as e:
+                                print(f"❌ Error updating progress: {e}")
                             
                         except Exception as e:
                             print(f"❌ Error processing route {index}: {e}")
@@ -241,12 +302,16 @@ def process_screenshots_worker():
                     
                     # Update job status
                     with app.app_context():
-                        job.status = 'completed'
-                        job.progress = 100
-                        job.completed_at = datetime.utcnow()
-                        job.result_file = zip_path
-                        db.session.commit()
-                        print(f"✅ Job completed: {job_id}")
+                        job = Job.query.filter_by(job_id=job_id).first()
+                        if job:
+                            job.status = 'completed'
+                            job.progress = 100
+                            job.completed_at = datetime.utcnow()
+                            job.result_file = zip_path
+                            db.session.commit()
+                            print(f"✅ Job completed: {job_id}")
+                        else:
+                            print(f"❌ Could not find job {job_id} to mark as completed")
                     
                 finally:
                     driver.quit()
@@ -337,6 +402,12 @@ def dashboard():
 @login_required
 def upload():
     if request.method == 'POST':
+        # Ensure database exists
+        try:
+            db.create_all()
+        except Exception as e:
+            print(f"Database creation error: {e}")
+        
         if 'file' not in request.files:
             flash('No file selected')
             return render_template('upload.html')
@@ -421,6 +492,7 @@ if __name__ == '__main__':
     # Create database tables
     with app.app_context():
         db.create_all()
+        print("✅ Database tables created successfully")
     
     # Start background worker
     start_worker()

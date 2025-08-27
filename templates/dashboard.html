@@ -188,17 +188,29 @@ function updateJobStatus() {
                     console.log(`Job ${jobId} failed, reloading page...`);
                     location.reload(); // Reload to show error status
                 } else if (data.status === 'processing') {
+                    console.log(`Job ${jobId} processing: ${data.progress}% (${data.completed_routes}/${data.total_routes})`);
+                    
+                    // Check if total_routes is 0 but completed_routes > 0 (indicates total_routes not set yet)
+                    if (data.total_routes === 0 && data.completed_routes > 0) {
+                        console.log(`Job ${jobId} has completed routes but total_routes is 0, forcing refresh...`);
+                        setTimeout(() => location.reload(), 1000); // Refresh after 1 second
+                        return;
+                    }
+                    
                     // Update progress bar
                     const progressBar = row.querySelector('.progress-bar');
                     if (progressBar) {
                         const newProgress = data.progress || 0;
                         const currentProgress = parseInt(progressBar.style.width) || 0;
                         
+                        console.log(`Progress bar: ${currentProgress}% -> ${newProgress}%`);
+                        
                         if (newProgress !== currentProgress) {
                             progressBar.style.width = newProgress + '%';
                             progressBar.textContent = newProgress + '%';
                             progressBar.setAttribute('aria-valuenow', newProgress);
                             hasUpdates = true;
+                            console.log(`Updated progress bar to ${newProgress}%`);
                         }
                     }
                     
@@ -209,6 +221,7 @@ function updateJobStatus() {
                         if (routeCount.textContent !== newText) {
                             routeCount.textContent = newText;
                             hasUpdates = true;
+                            console.log(`Updated route count to ${newText}`);
                         }
                     }
                 }
@@ -247,9 +260,9 @@ function updateSummaryCards() {
         });
 }
 
-// Update status every 2 seconds for more responsive updates
+// Update status every 1 second for more responsive updates
 if (document.querySelector('.badge.bg-warning')) {
-    setInterval(updateJobStatus, 2000);
+    setInterval(updateJobStatus, 1000);
 }
 
 function showError(message) {
