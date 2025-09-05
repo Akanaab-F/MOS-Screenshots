@@ -211,9 +211,9 @@ def process_screenshots_worker():
                 # Small delay to ensure database is updated
                 time.sleep(0.5)
                 
-                # Setup Chrome - NOT headless to handle cookie consent
+                # Setup Chrome - NOW headless since cookies are handled automatically
                 chrome_options = Options()
-                # chrome_options.add_argument("--headless")  # REMOVED: Allow browser to show for cookie consent
+                chrome_options.add_argument("--headless")  # ENABLED: Headless mode for faster processing
                 chrome_options.add_argument("--no-sandbox")
                 chrome_options.add_argument("--disable-dev-shm-usage")
                 chrome_options.add_argument("--window-size=1920,1080")
