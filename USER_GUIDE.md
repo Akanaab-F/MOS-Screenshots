@@ -47,6 +47,7 @@ Your Excel file must have exactly 3 sheets with specific column names:
 | latitude | The latitude coordinate of the site |
 | longitude | The longitude coordinate of the site |
 | warehouse | The name of the warehouse (must match the warehouse sheet) |
+| intermediate_warehouse | (Optional) If materials go through an intermediate warehouse, put the warehouse name here. This creates a 3-point route: warehouse → intermediate_warehouse → site |
 
 ### Sheet 2: "warehouse"
 | Column Name | What to put here |
@@ -67,10 +68,13 @@ Here's what your Excel file should look like:
 
 **transportation sheet:**
 ```
-ID      | latitude  | longitude | warehouse
-Site001 | 40.7128   | -74.0060  | NYC_Warehouse
-Site002 | 34.0522   | -118.2437 | LA_Warehouse
+ID      | latitude  | longitude | warehouse      | intermediate_warehouse
+Site001 | 40.7128   | -74.0060  | NYC_Warehouse  | 
+Site002 | 34.0522   | -118.2437 | LA_Warehouse   | Distribution_Center
+Site003 | 37.7749   | -122.4194 | SF_Warehouse   | 
 ```
+
+Note: The `intermediate_warehouse` column is optional. If provided, it creates a 3-point route (warehouse → intermediate_warehouse → site). If left empty, it creates a 2-point route (warehouse → site).
 
 **warehouse sheet:**
 ```

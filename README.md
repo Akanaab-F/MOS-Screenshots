@@ -6,7 +6,7 @@ A scalable web application that automatically generates Google Maps route screen
 
 - **Multi-user Support**: Each user has their own workspace and job history
 - **Real-time Progress Tracking**: Monitor job progress with live updates
-- **Background Processing**: Jobs run in the background using Celery
+- **Background Processing**: Jobs run in the background using threading
 - **User-friendly Interface**: Modern, responsive web interface
 - **File Validation**: Automatic validation of Excel file format and structure
 - **Secure File Handling**: Files are processed securely with user isolation
@@ -14,7 +14,13 @@ A scalable web application that automatically generates Google Maps route screen
 
 ## Quick Start
 
-### Option 1: Docker (Recommended)
+### Prerequisites
+
+- Python 3.8 or higher
+- Google Chrome browser installed
+- ChromeDriver (automatically managed by webdriver-manager)
+
+### Installation
 
 1. **Clone the repository**
    ```bash
@@ -22,51 +28,36 @@ A scalable web application that automatically generates Google Maps route screen
    cd MOS-Screenshots
    ```
 
-2. **Start the application**
+2. **Create virtual environment** (recommended)
+   ```bash
+   # Windows
+   python -m venv .venv
+   .venv\Scripts\activate
+   
+   # Linux/Mac
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Run the application**
    ```bash
    # Windows
    start.bat
    
-   # Linux/Mac
-   docker-compose up -d
-   ```
-
-3. **Access the application**
-   - Open your browser and go to `http://localhost:5000`
-   - Register a new account
-   - Upload your Excel file and start processing
-
-### Option 2: Local Development
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/Akanaab-F/MOS-Screenshots.git
-   cd MOS-Screenshots
-   ```
-
-2. **Start locally (Windows)**
-   ```bash
-   start_local.bat
-   ```
-
-3. **Or manually:**
-   ```bash
-   # Create virtual environment
-   python -m venv .venv
-   .venv\Scripts\activate     # Windows
-   
-   # Install dependencies
-   pip install -r requirements.txt
-   
-   # Run the application
+   # Or manually
    python app.py
    ```
 
-4. **Access the application**
+5. **Access the application**
    - Open your browser and go to `http://localhost:5000`
    - Register a new account
    - Upload your Excel file and start processing
-   - **Note**: Chrome browser will open for cookie consent handling
+   - **Note**: Chrome browser will be used in headless mode for screenshot generation
 
 ## Excel File Format
 
@@ -79,6 +70,7 @@ Your Excel file must contain the following sheets:
 | latitude | Site latitude coordinate | Yes |
 | longitude | Site longitude coordinate | Yes |
 | warehouse | Warehouse name (must match warehouse sheet) | Yes |
+| intermediate_warehouse | Optional intermediate warehouse name for 3-point routes (warehouse → intermediate_warehouse → site) | No |
 
 ### Warehouse Sheet
 | Column | Description | Required |
@@ -106,10 +98,10 @@ Your Excel file must contain the following sheets:
 
 For production deployment, consider the following:
 
-1. **Use a production database** (PostgreSQL, MySQL) instead of SQLite
-2. **Set up proper SSL/TLS certificates**
-3. **Configure a reverse proxy** (Nginx, Apache)
-4. **Use environment variables** for sensitive configuration
+1. **Set a strong SECRET_KEY** using environment variables
+2. **Use a production WSGI server** like Gunicorn or Waitress
+3. **Set up proper SSL/TLS certificates**
+4. **Configure a reverse proxy** (Nginx, Apache) if needed
 5. **Set up monitoring and logging**
 
 ### Environment Variables
@@ -117,82 +109,39 @@ For production deployment, consider the following:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | SECRET_KEY | Flask secret key | `your-secret-key-here` |
-| DATABASE_URL | Database connection string | `sqlite:///routes.db` |
-| REDIS_URL | Redis connection string | `redis://localhost:6379/0` |
-| FLASK_ENV | Flask environment | `production` |
 
-### Scaling
+Set the secret key before running in production:
+```bash
+# Windows
+set SECRET_KEY=your-super-secret-key-here
+python app.py
 
-The application is designed to scale horizontally. Here are the scaling options:
+# Linux/Mac
+export SECRET_KEY=your-super-secret-key-here
+python app.py
+```
 
-### Quick Scaling
+### Running with a Production WSGI Server
 
-1. **Scale web servers**:
-   ```bash
-   docker-compose -f docker-compose.prod.yml up -d --scale web=5
-   ```
+For production, use a proper WSGI server instead of Flask's development server:
 
-2. **Scale Celery workers**:
-   ```bash
-   docker-compose -f docker-compose.prod.yml up -d --scale celery=3
-   ```
+**Using Waitress (Windows-friendly):**
+```bash
+pip install waitress
+waitress-serve --host=0.0.0.0 --port=5000 app:app
+```
 
-3. **Scale both**:
-   ```bash
-   docker-compose -f docker-compose.prod.yml up -d --scale web=5 --scale celery=3
-   ```
-
-### Production Scaling
-
-For production deployment with full scaling capabilities:
-
-1. **Run the production deployment script**:
-   ```bash
-   ./deploy.sh
-   ```
-
-2. **Manual scaling with resource limits**:
-   ```bash
-   # Scale web servers with resource limits
-   docker-compose -f docker-compose.prod.yml up -d --scale web=3
-   
-   # Scale Celery workers with resource limits
-   docker-compose -f docker-compose.prod.yml up -d --scale celery=2
-   ```
-
-3. **Database scaling**:
-   - Use PostgreSQL with connection pooling
-   - Set up read replicas for read-heavy workloads
-   - Use Redis clustering for high availability
-
-4. **Load balancer scaling**:
-   - Nginx automatically load balances between web instances
-   - Configure additional Nginx instances for high availability
-   - Use external load balancers (AWS ALB, GCP LB, etc.)
-
-### Monitoring Scaling
-
-Monitor your scaling with:
-
-- **Grafana Dashboard**: http://localhost:3000 (admin/admin)
-- **Prometheus Metrics**: http://localhost:9090
-- **Application Metrics**: https://localhost/metrics
-
-### Auto-scaling
-
-For automatic scaling based on load:
-
-1. **Set up monitoring alerts** in Grafana
-2. **Use Kubernetes** for container orchestration
-3. **Implement horizontal pod autoscaling** (HPA)
-4. **Use cloud auto-scaling groups** (AWS, GCP, Azure)
+**Using Gunicorn (Linux/Mac):**
+```bash
+pip install gunicorn
+gunicorn --bind 0.0.0.0:5000 --workers 4 app:app
+```
 
 ## Architecture
 
 - **Flask**: Web framework
-- **SQLAlchemy**: Database ORM
-- **Celery**: Background task processing
-- **Redis**: Message broker and cache
+- **SQLAlchemy**: Database ORM (SQLite)
+- **Threading**: Background task processing
 - **Selenium**: Web automation for screenshots
 - **Bootstrap**: Frontend framework
 
@@ -201,28 +150,36 @@ For automatic scaling based on load:
 - User authentication and authorization
 - Secure file upload validation with comprehensive checks
 - User data isolation
-- CSRF protection
 - Input sanitization
-- Rate limiting (5 uploads per hour per user)
 - Environment variable configuration for secrets
 - File type and structure validation
-- Automatic cleanup of uploaded files after processing
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Chrome not starting**: Ensure Chrome is installed and accessible
-2. **Screenshots not generating**: Check internet connection and Google Maps accessibility
-3. **Jobs stuck in processing**: Restart Celery workers
-4. **Database errors**: Check database connection and permissions
+1. **Chrome not starting**: 
+   - Ensure Chrome is installed and accessible
+   - Check that ChromeDriver is compatible with your Chrome version
+   - The webdriver-manager package should handle this automatically
 
-### Logs
+2. **Screenshots not generating**: 
+   - Check internet connection and Google Maps accessibility
+   - Verify that coordinates in your Excel file are valid
+   - Check the application console for error messages
 
-Check the following logs for debugging:
-- Application logs: `docker-compose logs web`
-- Celery logs: `docker-compose logs celery`
-- Redis logs: `docker-compose logs redis`
+3. **Jobs stuck in processing**: 
+   - Restart the application
+   - Check the console for error messages
+   - Verify that Chrome is not blocked by firewall
+
+4. **Database errors**: 
+   - Check that the `instance/` directory exists and is writable
+   - Delete `instance/routes.db` to reset the database (this will delete all user data)
+
+5. **Port already in use**: 
+   - Change the port in `app.py` (line 549) from 5000 to another port
+   - Or stop the process using port 5000
 
 ## Contributing
 

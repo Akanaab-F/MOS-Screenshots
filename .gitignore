@@ -73,12 +73,13 @@ Thumbs.db
 .env.local
 .env.production
 
-# Docker
-.dockerignore
+# Build artifacts and distribution packages
+*.spec
+dist_package/
+RouteScreenshotApp*/
+*.zip
+*.rar
+*.exe
 
-# Celery
-celerybeat-schedule
-celerybeat.pid
-
-# Redis
-dump.rdb 
+# PyInstaller
+*.spec 

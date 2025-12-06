@@ -5,6 +5,7 @@ This version handles cookie consent and fixes progress updates
 """
 
 import os
+import sys
 import uuid
 import zipfile
 import threading
@@ -26,11 +27,30 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import json
 
 # Flask app setup
-app = Flask(__name__)
+# Handle PyInstaller bundled executable
+if getattr(sys, 'frozen', False):
+    # Running as compiled executable
+    template_folder = os.path.join(sys._MEIPASS, 'templates')
+    app = Flask(__name__, template_folder=template_folder)
+else:
+    # Running as script
+    app = Flask(__name__)
+
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 
-# Use absolute path for database
-db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'routes.db')
+# Use absolute path for database (handle PyInstaller)
+if getattr(sys, 'frozen', False):
+    # Running as compiled executable
+    base_path = os.path.dirname(sys.executable)
+else:
+    # Running as script
+    base_path = os.path.dirname(os.path.abspath(__file__))
+
+# Ensure instance directory exists
+instance_dir = os.path.join(base_path, 'instance')
+os.makedirs(instance_dir, exist_ok=True)
+
+db_path = os.path.join(instance_dir, 'routes.db')
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -224,7 +244,7 @@ def process_screenshots_worker():
                 driver = webdriver.Chrome(options=chrome_options)
                 driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
                 
-                screenshots_dir = f"screenshots/{job_id}"
+                screenshots_dir = os.path.join(base_path, 'screenshots', job_id)
                 os.makedirs(screenshots_dir, exist_ok=True)
                 
                 completed = 0
@@ -246,10 +266,33 @@ def process_screenshots_worker():
                             warehouse_lat = warehouse_row.iloc[0]['latitude']
                             warehouse_lng = warehouse_row.iloc[0]['longitude']
                             
-                            # Generate Google Maps URL (latitude,longitude format)
-                            url = f"https://www.google.com/maps/dir/{warehouse_lat},{warehouse_lng}/{lat},{lng}"
-                            
-                            print(f"📍 Processing route {completed + 1}/{total_routes}: {site_id}")
+                            # Check if intermediate warehouse exists (for 3-point routes)
+                            intermediate_warehouse_name = None
+                            if 'intermediate_warehouse' in row and pd.notna(row['intermediate_warehouse']):
+                                intermediate_warehouse_name = str(row['intermediate_warehouse']).strip()
+                                if intermediate_warehouse_name:
+                                    # Find intermediate warehouse coordinates
+                                    intermediate_warehouse_row = warehouse_df[warehouse_df['Warehouse'] == intermediate_warehouse_name]
+                                    if not intermediate_warehouse_row.empty:
+                                        intermediate_lat = intermediate_warehouse_row.iloc[0]['latitude']
+                                        intermediate_lng = intermediate_warehouse_row.iloc[0]['longitude']
+                                        
+                                        # Generate Google Maps URL with 3 points: warehouse -> intermediate_warehouse -> site
+                                        url = f"https://www.google.com/maps/dir/{warehouse_lat},{warehouse_lng}/{intermediate_lat},{intermediate_lng}/{lat},{lng}"
+                                        print(f"📍 Processing 3-point route {completed + 1}/{total_routes}: {site_id} ({warehouse_name} -> {intermediate_warehouse_name} -> Site)")
+                                    else:
+                                        # Intermediate warehouse not found, fall back to 2-point route
+                                        print(f"⚠️ Intermediate warehouse '{intermediate_warehouse_name}' not found, using 2-point route for {site_id}")
+                                        url = f"https://www.google.com/maps/dir/{warehouse_lat},{warehouse_lng}/{lat},{lng}"
+                                        print(f"📍 Processing route {completed + 1}/{total_routes}: {site_id}")
+                                else:
+                                    # Empty intermediate warehouse, use 2-point route
+                                    url = f"https://www.google.com/maps/dir/{warehouse_lat},{warehouse_lng}/{lat},{lng}"
+                                    print(f"📍 Processing route {completed + 1}/{total_routes}: {site_id}")
+                            else:
+                                # No intermediate warehouse column or value, use 2-point route
+                                url = f"https://www.google.com/maps/dir/{warehouse_lat},{warehouse_lng}/{lat},{lng}"
+                                print(f"📍 Processing route {completed + 1}/{total_routes}: {site_id}")
                             
                             # Navigate to page
                             driver.get(url)
@@ -293,7 +336,7 @@ def process_screenshots_worker():
                             continue
                     
                     # Create ZIP file
-                    zip_path = f"screenshots/{job_id}_routes.zip"
+                    zip_path = os.path.join(base_path, 'screenshots', f"{job_id}_routes.zip")
                     with zipfile.ZipFile(zip_path, 'w') as zipf:
                         for filename in os.listdir(screenshots_dir):
                             if filename.endswith('.png'):
@@ -421,7 +464,7 @@ def upload():
             filename = secure_filename(file.filename)
             
             # Save file
-            upload_dir = 'uploads'
+            upload_dir = os.path.join(base_path, 'uploads')
             os.makedirs(upload_dir, exist_ok=True)
             filepath = os.path.join(upload_dir, filename)
             file.save(filepath)

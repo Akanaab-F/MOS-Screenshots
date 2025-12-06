@@ -16,6 +16,7 @@
                         <li>Excel file (.xlsx or .xls format)</li>
                         <li>Must contain sheets: <code>transportation</code>, <code>warehouse</code>, <code>region</code></li>
                         <li>Transportation sheet must have columns: <code>ID</code>, <code>latitude</code>, <code>longitude</code>, <code>warehouse</code></li>
+                        <li>Optional: Add <code>intermediate_warehouse</code> column for 3-point routes (warehouse → intermediate_warehouse → site)</li>
                         <li>Maximum file size: 16MB</li>
                     </ul>
                 </div>
@@ -74,6 +75,7 @@
                             <li><code>latitude</code> - Site latitude coordinate</li>
                             <li><code>longitude</code> - Site longitude coordinate</li>
                             <li><code>warehouse</code> - Warehouse name (must match warehouse sheet)</li>
+                            <li><code>intermediate_warehouse</code> - <em>(Optional)</em> Intermediate warehouse for 3-point routes</li>
                         </ul>
                     </div>
                     <div class="col-md-4">
